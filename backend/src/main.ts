@@ -12,18 +12,30 @@ async function bootstrap() {
   });
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: true,
     credentials: true,
   });
 
   app.setGlobalPrefix('api/v1');
 
   const port = process.env.PORT || 3102;
-  await app.listen(port);
-  
-  logger.log(`Stradex Parking System running on http://localhost:${port}`);
-  logger.log(`API: http://localhost:${port}/api/v1`);
-  logger.log(`Health: http://localhost:${port}/api/v1/health`);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
+
+  const interfaces = require('os').networkInterfaces();
+  const addresses: string[] = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        addresses.push(iface.address);
+      }
+    }
+  }
+
+  logger.log(`Stradex Parking System running`);
+  logger.log(`Local:   http://localhost:${port}`);
+  addresses.forEach(addr => logger.log(`Network: http://${addr}:${port}`));
+  logger.log(`API:     http://localhost:${port}/api/v1`);
 }
 
 bootstrap().catch((err) => {
