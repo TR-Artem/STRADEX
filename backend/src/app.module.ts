@@ -5,6 +5,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MulterModule } from '@nestjs/platform-express';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ParkingModule } from './modules/parking/parking.module';
@@ -46,6 +48,10 @@ import { HealthController } from './health.controller';
     ReportsModule,
     DashboardModule,
     LPRModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', '..', 'frontend', 'dist'),
+      exclude: ['/api/(.*)'],
+    }),
     MulterModule.register({
       limits: {
         fileSize: 50 * 1024 * 1024, // 50MB max

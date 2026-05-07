@@ -34,7 +34,7 @@ export default function LPRTest() {
       const formData = new FormData();
       formData.append('image', fileInputRef.current.files[0]);
 
-      const response = await fetch('http://localhost:3102/api/v1/lpr/recognize', {
+      const response = await fetch(`${window.location.protocol === 'file:' ? 'http://localhost:3102' : ''}/api/v1/lpr/recognize`, {
         method: 'POST',
         body: formData,
       });
