@@ -14,7 +14,10 @@ const API_BASE = isProduction || isElectron
 export const api = {
   async get(endpoint: string) {
     const res = await fetch(`${API_BASE}/api/v1${endpoint}`);
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`API error: ${res.status}${body ? ` - ${body}` : ''}`);
+    }
     return res.json();
   },
 
@@ -24,7 +27,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`API error: ${res.status}${body ? ` - ${body}` : ''}`);
+    }
     return res.json();
   },
 
@@ -34,7 +40,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`API error: ${res.status}${body ? ` - ${body}` : ''}`);
+    }
     return res.json();
   },
 
@@ -42,7 +51,10 @@ export const api = {
     const res = await fetch(`${API_BASE}/api/v1${endpoint}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`API error: ${res.status}${body ? ` - ${body}` : ''}`);
+    }
     return res.json();
   },
 };

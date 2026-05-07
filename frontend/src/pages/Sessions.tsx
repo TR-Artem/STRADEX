@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../services/auth';
+import ErrorBanner from '../components/ErrorBanner';
 
 // Типы клиентов
 const CLIENT_TYPES = {
@@ -21,6 +22,7 @@ export default function Sessions() {
     clientType: 'ONE_TIME'
   });
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -43,6 +45,7 @@ export default function Sessions() {
       setSessions(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Ошибка загрузки сессий:', e);
+      setError('Не удалось загрузить сессии. Проверьте подключение к серверу.');
     } finally {
       setLoading(false);
     }
@@ -118,6 +121,8 @@ export default function Sessions() {
           </button>
         </div>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
         <table className="w-full">

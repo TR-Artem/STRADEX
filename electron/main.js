@@ -133,7 +133,7 @@ function initDatabase(callback) {
   });
 }
 
-function startBackend() {
+function startBackend(callback) {
   log('Starting backend server...');
 
   const mainJsPath = path.join(backendDistPath, 'main.js');
@@ -141,51 +141,72 @@ function startBackend() {
 
   if (!fs.existsSync(mainJsPath)) {
     log('ERROR: Backend not built! ' + mainJsPath);
+    if (callback) callback(false, 'Бэкенд не собран. Запустите сборку.');
     return;
   }
 
-  // Environment for backend
-  const env = {
-    ...process.env,
-    NODE_ENV: 'production',
-    PORT: '3102',
-    DATABASE_URL: `file:${dbPath}`,
-    JWT_SECRET: 'stradex-jwt-secret-change-in-production',
-    CORS_ORIGIN: '*',
-  };
-
+  // Check if node is available
   const nodeCmd = isWindows ? 'node.exe' : 'node';
-
-  backendProcess = spawn(nodeCmd, [mainJsPath], {
-    cwd: backendPath,
-    shell: true,
-    stdio: 'pipe',
-    env,
+  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
+  
+  checkNode.on('error', () => {
+    log('ERROR: Node.js not found! Please install Node.js to run the backend.');
+    if (callback) callback(false, 'Node.js не найден. Установите Node.js с https://nodejs.org');
+    return;
   });
 
-  let startupComplete = false;
-
-  backendProcess.stdout.on('data', (data) => {
-    const text = data.toString();
-    process.stdout.write('[Backend] ' + text);
-
-    if (!startupComplete && text.includes('running on http://localhost')) {
-      startupComplete = true;
-      log('Backend started successfully!');
+  checkNode.on('close', (code) => {
+    if (code !== 0) {
+      if (callback) callback(false, 'Node.js не найден. Установите Node.js с https://nodejs.org');
+      return;
     }
+
+    // Environment for backend
+    const env = {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: '3102',
+      DATABASE_URL: `file:${dbPath}`,
+      JWT_SECRET: 'stradex-jwt-secret-change-in-production',
+      CORS_ORIGIN: '*',
+    };
+
+    backendProcess = spawn(nodeCmd, [mainJsPath], {
+      cwd: backendPath,
+      shell: true,
+      stdio: 'pipe',
+      env,
+    });
+
+    let startupComplete = false;
+
+    backendProcess.stdout.on('data', (data) => {
+      const text = data.toString();
+      process.stdout.write('[Backend] ' + text);
+
+      if (!startupComplete && text.includes('running on http://localhost')) {
+        startupComplete = true;
+        log('Backend started successfully!');
+        if (callback) callback(true, null);
+      }
+    });
+
+    backendProcess.stderr.on('data', (data) => {
+      process.stderr.write('[Backend Error] ' + data.toString());
+    });
+
+    backendProcess.on('close', (code) => {
+      log('Backend process exited with code: ' + code);
+      if (!startupComplete && callback) callback(false, `Бэкенд завершился с кодом ${code}`);
+    });
+
+    backendProcess.on('error', (err) => {
+      log('Backend error: ' + err.message);
+      if (!startupComplete && callback) callback(false, `Ошибка запуска бэкенда: ${err.message}`);
+    });
   });
 
-  backendProcess.stderr.on('data', (data) => {
-    process.stderr.write('[Backend Error] ' + data.toString());
-  });
-
-  backendProcess.on('close', (code) => {
-    log('Backend process exited with code: ' + code);
-  });
-
-  backendProcess.on('error', (err) => {
-    log('Backend error: ' + err.message);
-  });
+  checkNode.stdin.end();
 }
 
 // IPC handlers
@@ -202,18 +223,57 @@ app.whenReady().then(async () => {
       log('Database initialized');
 
       setTimeout(() => {
-        startBackend();
-
-        setTimeout(() => {
-          createWindow();
-          log('Window created');
-        }, 5000);
+        startBackend((backendOk, backendErr) => {
+          if (backendOk) {
+            setTimeout(() => {
+              createWindow();
+              log('Window created');
+            }, 2000);
+          } else {
+            // Show error in window
+            createErrorWindow(backendErr || 'Неизвестная ошибка запуска бэкенда');
+          }
+        });
       }, 2000);
     } else {
       log('Failed to initialize database');
+      createErrorWindow('Не удалось инициализировать базу данных. Проверьте права доступа.');
     }
   });
 });
+
+function createErrorWindow(message) {
+  mainWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
+    title: 'STRADEX - Ошибка',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  mainWindow.loadURL(`data:text/html;charset=utf-8,
+    <html>
+    <head><meta charset="utf-8"><style>
+      body { background:#0f172a; color:#e2e8f0; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+      .box { text-align:center; max-width:450px; }
+      h1 { color:#f87171; font-size:24px; margin-bottom:16px; }
+      p { color:#94a3b8; line-height:1.6; font-size:14px; }
+      .btn { display:inline-block; margin-top:20px; padding:10px 24px; background:#6366f1; color:white; border:none; border-radius:6px; cursor:pointer; font-size:14px; text-decoration:none; }
+      .btn:hover { background:#4f46e5; }
+    </style></head>
+    <body>
+      <div class="box">
+        <h1>⚠ Ошибка запуска</h1>
+        <p>${encodeURI(message).replace(/%20/g, ' ').replace(/%3A/g, ':').replace(/%2E/g, '.').replace(/%2C/g, ',').replace(/%28/g, '(').replace(/%29/g, ')').replace(/%27/g, "'")}</p>
+        <a class="btn" href="#" onclick="window.close()">Закрыть</a>
+      </div>
+    </body>
+    </html>
+  `);
+}
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {

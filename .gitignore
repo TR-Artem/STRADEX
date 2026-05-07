@@ -42,4 +42,4 @@ electron/node_modules/.cache/
 # Temp files
 tmp/
 temp/
-*.tmp
+*.tmp*.traineddata

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import ErrorBanner from '../components/ErrorBanner';
 
 // Типы клиентов для отображения
 const CLIENT_TYPES = {
@@ -12,6 +13,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [clientStats, setClientStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboard();
@@ -44,6 +46,7 @@ export default function Dashboard() {
       setClientStats(byType);
     } catch (e) {
       console.error('Ошибка загрузки панели:', e);
+      setError('Не удалось загрузить данные. Проверьте подключение к серверу.');
     } finally {
       setLoading(false);
     }
@@ -56,6 +59,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Панель управления</h1>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard

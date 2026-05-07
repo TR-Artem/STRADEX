@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import ErrorBanner from '../components/ErrorBanner';
 
 export default function Reports() {
   const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
   const [reportType, setReportType] = useState<'revenue' | 'sessions' | 'events'>('revenue');
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadReport();
@@ -23,6 +25,7 @@ export default function Reports() {
       }
     } catch (e) {
       console.error('Ошибка загрузки отчёта:', e);
+      setError('Не удалось загрузить отчёт. Проверьте подключение к серверу.');
     } finally {
       setLoading(false);
     }
@@ -37,6 +40,8 @@ export default function Reports() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Финансовые отчёты</h1>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       <div className="flex gap-4">
         <div className="flex bg-gray-900 rounded-lg p-1">

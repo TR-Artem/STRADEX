@@ -13,6 +13,7 @@ import { AuthProvider, useAuth, ensureDefaultOrg } from './services/auth';
 function AppContent() {
   const { organizationId } = useAuth();
   const [stats, setStats] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (organizationId) {
@@ -34,6 +35,7 @@ function AppContent() {
       setStats(data);
     } catch (e) {
       console.error('Ошибка загрузки статистики:', e);
+      setError('Сервер недоступен');
     }
   }
 
@@ -55,6 +57,11 @@ function AppContent() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {error && (
+              <span className="text-red-400 text-xs px-2 py-1 bg-red-900/30 rounded" title={error}>
+                Нет подключения
+              </span>
+            )}
             <StatusBadge
               label="Активные"
               value={stats?.activeSessions ?? 0}

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import ErrorBanner from '../components/ErrorBanner';
 
 export default function Tariffs() {
   const [tariffs, setTariffs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadTariffs();
@@ -15,6 +17,7 @@ export default function Tariffs() {
       setTariffs(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Ошибка загрузки тарифов:', e);
+      setError('Не удалось загрузить тарифы. Проверьте подключение к серверу.');
       setTariffs([]);
     } finally {
       setLoading(false);
@@ -24,6 +27,8 @@ export default function Tariffs() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Настройка тарифов</h1>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TariffCard

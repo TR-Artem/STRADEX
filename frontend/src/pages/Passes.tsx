@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import ErrorBanner from '../components/ErrorBanner';
 
 export default function Passes() {
   const [passes, setPasses] = useState<any[]>([]);
@@ -12,6 +13,7 @@ export default function Passes() {
     validDays: 7,
     maxUses: 1,
   });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPasses();
@@ -23,6 +25,7 @@ export default function Passes() {
       setPasses(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Ошибка загрузки пропусков:', e);
+      setError('Не удалось загрузить пропуска. Проверьте подключение к серверу.');
     } finally {
       setLoading(false);
     }
@@ -67,6 +70,8 @@ export default function Passes() {
           + Создать пропуск
         </button>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <PassTypeCard
