@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+build/
+release/
+
+# Backend
+backend/dist/
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+
+# Electron
+electron/release/
+electron/node_modules/.cache/
+
+# Temp files
+tmp/
+temp/
+*.tmp

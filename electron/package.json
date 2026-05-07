@@ -1,0 +1,51 @@
+{
+  "name": "stradex-parking-desktop",
+  "version": "1.0.0",
+  "description": "STRADEX - Automated Parking System Desktop Application",
+  "main": "main.js",
+  "author": "STRADEX",
+  "scripts": {
+    "build": "npm run build:backend && npm run build:frontend && electron-builder --win --linux --dir --publish never",
+    "build:all": "npm run build:backend && npm run build:frontend && electron-builder --win --linux --publish never",
+    "build:backend": "cd ../backend && npm run build",
+    "build:frontend": "cd ../frontend && npm run build"
+  },
+  "build": {
+    "appId": "com.stradex.parking",
+    "productName": "STRADEX Parking",
+    "copyright": "Copyright © 2026 STRADEX",
+    "asar": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["dist/**/*", "prisma/**/*", "node_modules/**/*", "package.json", ".env"]
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend",
+        "filter": ["dist/**/*", "package.json"]
+      }
+    ],
+    "linux": {
+      "target": ["AppImage", "dir"],
+      "artifactName": "STRADEX-Parking-${version}-Linux.${ext}"
+    },
+    "win": {
+      "target": ["dir"],
+      "artifactName": "STRADEX-Parking-${version}-Windows.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}

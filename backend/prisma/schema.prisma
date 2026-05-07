@@ -1,0 +1,249 @@
+// Stradex Parking System - Database Schema (SQLite)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  inn          String?
+  city         String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  orgType      String   @default("COMMERCIAL")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  maxLocations Int      @default(1)
+  maxDevices   Int      @default(10)
+  users        OrganizationUser[]
+  locations    ParkingLocation[]
+  devices      EdgeDevice[]
+  vehicles     Vehicle[]
+  whitelistRules WhitelistRule[]
+  blacklistRules BlacklistRule[]
+  subscriptions Subscription[]
+  guestPasses  GuestPass[]
+  payments     Payment[]
+}
+
+model OrganizationUser {
+  id             String       @id @default(uuid())
+  organizationId String
+  email          String       @unique
+  passwordHash   String
+  name           String?
+  role           String       @default("OPERATOR")
+  isActive       Boolean      @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  auditLogs      AuditLog[]
+}
+
+model ParkingLocation {
+  id              String   @id @default(uuid())
+  organizationId   String
+  name            String
+  address         String
+  latitude        Float?
+  longitude       Float?
+  timezone        String   @default("Europe/Moscow")
+  totalSpots      Int
+  hourlyRate      Int
+  firstFreeMinutes Int     @default(15)
+  maxDailyRate    Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  cameras         ParkingCamera[]
+  devices         EdgeDevice[]
+  sessions        ParkingSession[]
+}
+
+model ParkingCamera {
+  id          String   @id @default(uuid())
+  locationId  String
+  organizationId String
+  type        String
+  name        String
+  rtspUrl     String
+  ipAddress   String?
+  isActive    Boolean  @default(true)
+  lastPingAt  DateTime?
+  createdAt   DateTime @default(now())
+  location    ParkingLocation @relation(fields: [locationId], references: [id])
+}
+
+model EdgeDevice {
+  id             String   @id @default(uuid())
+  organizationId  String
+  locationId      String
+  name            String
+  type            String
+  hmacSecret      String
+  isActive        Boolean  @default(true)
+  lastHeartbeatAt DateTime?
+  firmwareVersion String?
+  createdAt       DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  location       ParkingLocation @relation(fields: [locationId], references: [id])
+}
+
+model Vehicle {
+  id             String   @id @default(uuid())
+  organizationId String
+  plateNumber    String
+  plateRaw       String?
+  confidence     Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  whitelistRules WhitelistRule[]
+  blacklistRules BlacklistRule[]
+  subscriptions  SubscriptionVehicle[]
+  guestPasses    GuestPass[]
+  sessions       ParkingSession[]
+}
+
+model WhitelistRule {
+  id             String   @id @default(uuid())
+  organizationId String
+  vehicleId      String?
+  plateNumber    String
+  reason         String?
+  isActive       Boolean  @default(true)
+  validFrom      DateTime?
+  validTo        DateTime?
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  vehicle        Vehicle? @relation(fields: [vehicleId], references: [id])
+}
+
+model BlacklistRule {
+  id             String   @id @default(uuid())
+  organizationId String
+  vehicleId      String?
+  plateNumber    String
+  reason         String?
+  alertLevel     String   @default("WARNING")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  vehicle        Vehicle? @relation(fields: [vehicleId], references: [id])
+}
+
+model Subscription {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String
+  name           String
+  price          Int?
+  durationDays   Int?
+  maxVisits      Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  vehicles       SubscriptionVehicle[]
+}
+
+model SubscriptionVehicle {
+  id               String   @id @default(uuid())
+  subscriptionId    String
+  vehicleId        String
+  startDate        DateTime
+  endDate          DateTime?
+  visitsRemaining Int?
+  balanceRemaining Int?
+  isActive         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id])
+  vehicle         Vehicle @relation(fields: [vehicleId], references: [id])
+}
+
+model GuestPass {
+  id             String   @id @default(uuid())
+  organizationId String
+  vehicleId      String?
+  plateNumber    String
+  passType       String
+  validFrom      DateTime
+  validTo        DateTime
+  maxUses        Int      @default(1)
+  usesRemaining  Int      @default(1)
+  qrCode         String?
+  isUsed         Boolean  @default(false)
+  createdBy      String
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  vehicle        Vehicle? @relation(fields: [vehicleId], references: [id])
+}
+
+model ParkingSession {
+  id              String   @id @default(uuid())
+  locationId      String
+  organizationId  String
+  vehicleId       String?
+  plateNumber     String
+  plateRaw        String?
+  plateConfidence Float?
+  entryCameraId   String?
+  entryDeviceId   String?
+  entryTime       DateTime @default(now())
+  entryPhoto      String?
+  exitCameraId    String?
+  exitDeviceId    String?
+  exitTime        DateTime?
+  duration        Int?
+  amount          Int?
+  status          String   @default("ACTIVE")
+  paymentMethod   String?
+  paymentStatus   String   @default("PENDING")
+  paidAt          DateTime?
+  clientType      String   @default("ONE_TIME") // ONE_TIME, REGULAR, TENANT
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  location        ParkingLocation @relation(fields: [locationId], references: [id])
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+}
+
+model Payment {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  sessionId          String?
+  amount             Int
+  method             String
+  status             String   @default("PENDING")
+  yookassaPaymentId  String?
+  yookassaCheckoutUrl String?
+  fiscalReceiptId    String?
+  paidAt             DateTime?
+  refundedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  organization       Organization @relation(fields: [organizationId], references: [id])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  organizationId String
+  userId       String?
+  action       String
+  entityType   String
+  entityId     String?
+  details      String?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+  user         OrganizationUser? @relation(fields: [userId], references: [id])
+}
