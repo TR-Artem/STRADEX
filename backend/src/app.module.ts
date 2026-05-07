@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { MulterModule } from '@nestjs/platform-express';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ParkingModule } from './modules/parking/parking.module';
@@ -14,6 +15,7 @@ import { PassesModule } from './modules/passes/passes.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { LPRModule } from './modules/lpr/lpr.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -43,6 +45,12 @@ import { HealthController } from './health.controller';
     SubscriptionsModule,
     ReportsModule,
     DashboardModule,
+    LPRModule,
+    MulterModule.register({
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB max
+      },
+    }),
   ],
   controllers: [HealthController],
   providers: [

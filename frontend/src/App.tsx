@@ -6,6 +6,7 @@ import Passes from './pages/Passes';
 import Tariffs from './pages/Tariffs';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import LPRTest from './pages/LPRTest';
 import { api } from './services/api';
 import { AuthProvider, useAuth, ensureDefaultOrg } from './services/auth';
 
@@ -50,6 +51,7 @@ function AppContent() {
               <NavLink to="/passes">Пропуска</NavLink>
               <NavLink to="/tariffs">Тарифы</NavLink>
               <NavLink to="/reports">Отчёты</NavLink>
+              <NavLink to="/lpr">Камера</NavLink>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -75,6 +77,7 @@ function AppContent() {
           <Route path="/tariffs" element={<Tariffs />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/lpr" element={<LPRTest />} />
         </Routes>
       </main>
 
