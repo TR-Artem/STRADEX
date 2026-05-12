@@ -17,109 +17,114 @@ const backendDistPath = path.join(backendPath, 'dist');
 
 let backendProcess = null;
 let mainWindow = null;
-let splashWindow = null;
 
 function log(msg) {
   console.log('[STRADEX] ' + msg);
 }
 
-function showSplash(message) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.executeJavaScript(`
-      document.getElementById('status').textContent = ${JSON.stringify(message)};
-    `).catch(() => {});
+function waitForBackend(callback, maxWait = 30000) {
+  const startTime = Date.now();
+
+  function tryConnect() {
+    const req = http.get('http://localhost:3102/api/v1/health', (res) => {
+      if (res.statusCode === 200) {
+        log('Backend ready!');
+        callback(true);
+      } else {
+        retry();
+      }
+    });
+    req.on('error', () => retry());
+    req.setTimeout(2000, () => {
+      req.destroy();
+      retry();
+    });
   }
+
+  function retry() {
+    if (Date.now() - startTime > maxWait) {
+      log('Backend wait timeout');
+      callback(false);
+    } else {
+      setTimeout(tryConnect, 1000);
+    }
+  }
+
+  tryConnect();
 }
 
-function createSplashWindow() {
-  splashWindow = new BrowserWindow({
-    width: 500,
-    height: 350,
-    frame: false,
-    resizable: false,
-    center: true,
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
+function startBackend(callback) {
+  log('Starting backend...');
+
+  const mainJsPath = path.join(backendDistPath, 'main.js');
+
+  if (!fs.existsSync(mainJsPath)) {
+    callback(false, 'Backend not found: ' + mainJsPath);
+    return;
+  }
+
+  const nodeCmd = isWindows ? 'node.exe' : 'node';
+
+  const env = {
+    NODE_ENV: 'production',
+    PORT: '3102',
+    DATABASE_URL: 'file:' + dbPath,
+    JWT_SECRET: 'stradex-jwt-secret-change-in-production',
+  };
+
+  backendProcess = spawn(nodeCmd, [mainJsPath], {
+    cwd: backendPath,
+    shell: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env,
   });
 
-  splashWindow.loadURL(`data:text/html;charset=utf-8,
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-      <meta charset="UTF-8">
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-          background: linear-gradient(135deg, #1e1e2e 0%, #0f172a 100%);
-          color: white;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          text-align: center;
-        }
-        .logo { font-size: 64px; margin-bottom: 20px; }
-        h1 {
-          font-size: 28px;
-          font-weight: 600;
-          margin-bottom: 10px;
-          background: linear-gradient(90deg, #818cf8, #c084fc);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-        }
-        .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 30px; }
-        .spinner {
-          width: 40px;
-          height: 40px;
-          border: 3px solid #334155;
-          border-top-color: #818cf8;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin-bottom: 20px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .status { color: #94a3b8; font-size: 13px; min-height: 20px; }
-        .progress {
-          width: 200px;
-          height: 4px;
-          background: #334155;
-          border-radius: 2px;
-          overflow: hidden;
-          margin-top: 15px;
-        }
-        .progress-bar {
-          height: 100%;
-          background: linear-gradient(90deg, #818cf8, #c084fc);
-          animation: progress 2s ease-in-out infinite;
-        }
-        @keyframes progress {
-          0% { width: 0%; margin-left: 0; }
-          50% { width: 60%; margin-left: 20%; }
-          100% { width: 0%; margin-left: 100%; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="logo">P</div>
-      <h1>STRADEX</h1>
-      <div class="subtitle">Автоматизированная парковочная система</div>
-      <div class="spinner"></div>
-      <div class="status" id="status">Инициализация...</div>
-      <div class="progress"><div class="progress-bar"></div></div>
-    </body>
-    </html>
-  `);
+  let startupLog = '';
+  backendProcess.stdout.on('data', (d) => {
+    const text = d.toString();
+    startupLog += text;
+    process.stdout.write('[B] ' + text);
+  });
+  backendProcess.stderr.on('data', (d) => {
+    process.stderr.write('[BE] ' + d.toString());
+  });
+
+  backendProcess.on('error', (err) => {
+    log('Backend error: ' + err.message);
+    callback(false, 'Failed to start: ' + err.message);
+  });
+
+  backendProcess.on('close', (code) => {
+    log('Backend exited: ' + code);
+  });
+
+  // Wait for backend to be ready
+  waitForBackend((ready) => {
+    if (ready) {
+      callback(true);
+    } else {
+      // Try to extract error from logs
+      let errMsg = 'Backend did not respond';
+      if (startupLog.includes('EADDRINUSE')) {
+        errMsg = 'Port 3102 already in use. Close other apps and try again.';
+      } else if (startupLog.includes('Error')) {
+        const match = startupLog.match(/Error[:\s]+([^\n]+)/);
+        if (match) errMsg = match[1];
+      }
+      callback(false, errMsg);
+    }
+  });
 }
 
 function createMainWindow() {
+  log('Creating main window...');
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
     title: 'STRADEX - Парковочная система',
-    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -130,52 +135,36 @@ function createMainWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    // Load from local files - more reliable than HTTP
-    const indexPath = path.join(appPath, '..', 'frontend', 'dist', 'index.html');
-    log('Loading frontend from: ' + indexPath);
-    mainWindow.loadFile(indexPath);
+    mainWindow.loadURL('http://localhost:3102');
   }
-
-  mainWindow.once('ready-to-show', () => {
-    log('Main window ready to show');
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.close();
-      splashWindow = null;
-    }
-    mainWindow.show();
-    mainWindow.maximize();
-    log('Main window shown');
-  });
-
-  // Fallback: show main window after 10 seconds even if ready-to-show doesn't fire
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      log('Fallback: showing main window after timeout');
-      if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
-      }
-      mainWindow.show();
-      mainWindow.maximize();
-    }
-  }, 10000);
-
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    log('Page failed to load: ' + errorCode + ' - ' + errorDescription);
-    showError('Ошибка загрузки приложения\n\n' + errorDescription);
-  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Debug: log page events
+  mainWindow.webContents.on('did-finish-load', () => {
+    log('Page loaded successfully');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDesc) => {
+    log('Page failed: ' + errorCode + ' - ' + errorDesc);
+  });
+
+  mainWindow.webContents.on('crashed', () => {
+    log('Renderer crashed!');
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message) => {
+    if (level >= 2) { // Error level
+      log('Console error: ' + message);
+    }
+  });
 }
 
 function showError(message) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (mainWindow) {
     mainWindow.close();
-  }
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
   }
 
   const errorWin = new BrowserWindow({
@@ -186,202 +175,72 @@ function showError(message) {
     webPreferences: { nodeIntegration: false, contextIsolation: true },
   });
 
-  errorWin.loadURL(`data:text/html;charset=utf-8,
+  errorWin.loadURL(`data:text/html,
     <!DOCTYPE html>
-    <html lang="ru">
+    <html>
     <head>
       <meta charset="UTF-8">
       <style>
         body {
-          background: #0f172a;
-          color: #e2e8f0;
-          font-family: sans-serif;
+          background: #1a1a2e;
+          color: #eee;
+          font-family: system-ui, sans-serif;
           display: flex;
           align-items: center;
           justify-content: center;
           height: 100vh;
           margin: 0;
           padding: 20px;
+          box-sizing: border-box;
         }
-        .box { text-align: center; max-width: 400px; }
-        h1 { color: #f87171; margin-bottom: 20px; }
+        .box {
+          text-align: center;
+          max-width: 400px;
+        }
+        h1 { color: #e74; margin-bottom: 20px; }
         pre {
-          background: #1e293b;
+          background: #16213e;
           padding: 15px;
           border-radius: 8px;
           text-align: left;
           font-size: 12px;
           white-space: pre-wrap;
-          color: #94a3b8;
+          max-height: 200px;
+          overflow-y: auto;
         }
         button {
           margin-top: 20px;
           padding: 12px 30px;
-          background: #6366f1;
+          background: #4a4a8a;
           color: white;
           border: none;
           border-radius: 6px;
           cursor: pointer;
-          font-size: 14px;
         }
-        button:hover { background: #4f46e5; }
       </style>
     </head>
     <body>
       <div class="box">
-        <h1>! Ошибка</h1>
+        <h1>STRADEX - Error</h1>
         <pre>${message}</pre>
-        <button onclick="window.close()">Закрыть</button>
+        <button onclick="window.close()">Close</button>
       </div>
     </body>
     </html>
   `);
 }
 
-function checkBackendReady(callback) {
-  try {
-    const req = http.get('http://localhost:3102/api/v1/health', (res) => {
-      callback(true, null);
-    });
-    req.on('error', (err) => {
-      if (err.message && err.message.includes('EADDRINUSE')) {
-        callback(false, 'EADDRINUSE');
-      } else {
-        callback(false, null);
-      }
-    });
-    req.setTimeout(1000, () => {
-      req.destroy();
-      callback(false, null);
-    });
-  } catch (e) {
-    callback(false, null);
-  }
-}
-
 function initDatabase(callback) {
   log('Checking database...');
 
   if (fs.existsSync(dbPath)) {
-    log('Database exists');
+    log('Database OK');
     callback(true);
     return;
   }
 
-  log('Creating database...');
-  const prismaDir = path.join(backendPath, 'prisma');
-  if (!fs.existsSync(prismaDir)) {
-    fs.mkdirSync(prismaDir, { recursive: true });
-  }
-
-  const npxCmd = isWindows ? 'npx.cmd' : 'npx';
-  const prismaProcess = spawn(npxCmd, ['prisma', 'migrate', 'dev', '--name', 'init'], {
-    cwd: backendPath,
-    shell: true,
-    stdio: 'pipe',
-  });
-
-  prismaProcess.on('close', (code) => {
-    if (code === 0) {
-      log('Database migrated');
-      const npmCmd = isWindows ? 'npm.cmd' : 'npm';
-      const seedProcess = spawn(npmCmd, ['run', 'seed'], {
-        cwd: backendPath,
-        shell: true,
-        stdio: 'pipe',
-      });
-      seedProcess.on('close', (seedCode) => {
-        log('Seed completed with code: ' + seedCode);
-        callback(seedCode === 0);
-      });
-      seedProcess.stderr.on('data', (d) => log('Seed stderr: ' + d.toString()));
-    } else {
-      log('Migration failed with code: ' + code);
-      callback(false);
-    }
-  });
-
-  prismaProcess.stderr.on('data', (d) => log('Prisma stderr: ' + d.toString()));
-}
-
-function startBackend(callback) {
-  log('Starting backend...');
-
-  const mainJsPath = path.join(backendDistPath, 'main.js');
-
-  if (!fs.existsSync(mainJsPath)) {
-    log('Backend not found: ' + mainJsPath);
-    callback(false, 'Бэкенд не найден: ' + mainJsPath);
-    return;
-  }
-
-  const nodeCmd = isWindows ? 'node.exe' : 'node';
-
-  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
-  checkNode.on('error', () => {
-    callback(false, 'Node.js не установлен. Скачайте с https://nodejs.org');
-  });
-  checkNode.on('close', (code) => {
-    if (code !== 0) {
-      callback(false, 'Node.js не найден в PATH');
-      return;
-    }
-
-    const env = {
-      NODE_ENV: 'production',
-      PORT: '3102',
-      DATABASE_URL: 'file:' + dbPath,
-      JWT_SECRET: 'stradex-jwt-secret-change-in-production',
-    };
-
-    backendProcess = spawn(nodeCmd, [mainJsPath], {
-      cwd: backendPath,
-      shell: true,
-      stdio: 'pipe',
-      env,
-    });
-
-    backendProcess.stdout.on('data', (d) => {
-      process.stdout.write('[Backend] ' + d);
-    });
-    backendProcess.stderr.on('data', (d) => {
-      process.stderr.write('[Backend Error] ' + d);
-    });
-
-    backendProcess.on('error', (err) => {
-      log('Backend spawn error: ' + err.message);
-      callback(false, 'Ошибка запуска: ' + err.message);
-    });
-
-    backendProcess.on('close', (code) => {
-      log('Backend exited with code: ' + code);
-    });
-
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    function tryConnect() {
-      attempts++;
-      showSplash('Запуск сервера (' + attempts + '/' + maxAttempts + ')...');
-
-      checkBackendReady((ready, statusCode) => {
-        if (ready) {
-          log('Backend is ready');
-          callback(true);
-        } else if (statusCode === 'EADDRINUSE') {
-          callback(false, 'Порт 3102 уже занят!\n\nДругое приложение использует этот порт.\n\nРешение: lsof -i :3102 и kill PID');
-        } else if (attempts < maxAttempts) {
-          setTimeout(tryConnect, 1000);
-        } else {
-          callback(false, 'Превышено время ожидания запуска сервера');
-        }
-      });
-    }
-
-    setTimeout(tryConnect, 2000);
-  });
-
-  checkNode.stdin.end();
+  log('Database not found');
+  callback(false);
 }
 
 ipcMain.handle('get-app-path', () => app.getAppPath());
@@ -389,29 +248,27 @@ ipcMain.handle('get-version', () => app.getVersion());
 
 process.on('uncaughtException', (err) => {
   log('Uncaught: ' + err.message);
-  showError('Критическая ошибка:\n' + err.message);
 });
 
 app.whenReady().then(() => {
-  log('Starting STRADEX...');
+  log('STRADEX starting...');
 
-  createSplashWindow();
-
+  // Initialize database
   initDatabase((dbOk) => {
     if (!dbOk) {
-      showError('Не удалось инициализировать базу данных.\n\nВозможные причины:\n1. Нет прав на запись\n2. Повреждённая установка\n3. Prisma не работает');
+      showError('Database initialization failed.\n\nPlease reinstall the application.');
       return;
     }
 
-    showSplash('Запуск сервера...');
-
+    // Start backend and wait for it
     startBackend((backendOk, backendErr) => {
       if (!backendOk) {
-        showError(backendErr || 'Не удалось запустить сервер');
+        showError(backendErr || 'Backend failed to start');
         return;
       }
 
-      showSplash('Загрузка интерфейса...');
+      // Backend ready, create window
+      log('All systems ready, creating window...');
       createMainWindow();
     });
   });

@@ -11,7 +11,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const API_URL = '/api/v1';
+// Use localhost for file:// protocol, relative for HTTP
+const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
+const API_URL = isFileProtocol ? 'http://localhost:3102/api/v1' : '/api/v1';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
