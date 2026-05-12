@@ -4,11 +4,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 
-// Determine if we're in development or production
 const isDev = !app.isPackaged;
 const isWindows = process.platform === 'win32';
 
-// Paths
 const appPath = app.getAppPath();
 const resourcesPath = isDev
   ? path.join(__dirname, '..', 'backend')
@@ -22,7 +20,7 @@ let mainWindow = null;
 let splashWindow = null;
 
 function log(msg) {
-  console.log(`[STRADEX] ${msg}`);
+  console.log('[STRADEX] ' + msg);
 }
 
 function showSplash(message) {
@@ -40,10 +38,7 @@ function createSplashWindow() {
     frame: false,
     resizable: false,
     center: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
   });
 
   splashWindow.loadURL(`data:text/html;charset=utf-8,
@@ -64,10 +59,7 @@ function createSplashWindow() {
           height: 100vh;
           text-align: center;
         }
-        .logo {
-          font-size: 64px;
-          margin-bottom: 20px;
-        }
+        .logo { font-size: 64px; margin-bottom: 20px; }
         h1 {
           font-size: 28px;
           font-weight: 600;
@@ -76,11 +68,7 @@ function createSplashWindow() {
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
-        .subtitle {
-          color: #94a3b8;
-          font-size: 14px;
-          margin-bottom: 30px;
-        }
+        .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 30px; }
         .spinner {
           width: 40px;
           height: 40px;
@@ -90,14 +78,8 @@ function createSplashWindow() {
           animation: spin 1s linear infinite;
           margin-bottom: 20px;
         }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .status {
-          color: #94a3b8;
-          font-size: 13px;
-          min-height: 20px;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .status { color: #94a3b8; font-size: 13px; min-height: 20px; }
         .progress {
           width: 200px;
           height: 4px;
@@ -119,7 +101,7 @@ function createSplashWindow() {
       </style>
     </head>
     <body>
-      <div class="logo">🅿️</div>
+      <div class="logo">P</div>
       <h1>STRADEX</h1>
       <div class="subtitle">Автоматизированная парковочная система</div>
       <div class="spinner"></div>
@@ -147,7 +129,6 @@ function createMainWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadURL('http://localhost:3102');
   }
@@ -163,10 +144,6 @@ function createMainWindow() {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     log('Page failed to load: ' + errorCode + ' - ' + errorDescription);
     showError('Ошибка загрузки приложения\n\n' + errorDescription);
-  });
-
-  mainWindow.webContents.on('crashed', () => {
-    showError('Приложение неожиданно завершилось');
   });
 
   mainWindow.on('closed', () => {
@@ -207,10 +184,7 @@ function showError(message) {
           margin: 0;
           padding: 20px;
         }
-        .box {
-          text-align: center;
-          max-width: 400px;
-        }
+        .box { text-align: center; max-width: 400px; }
         h1 { color: #f87171; margin-bottom: 20px; }
         pre {
           background: #1e293b;
@@ -236,7 +210,7 @@ function showError(message) {
     </head>
     <body>
       <div class="box">
-        <h1>⚠ Ошибка</h1>
+        <h1>! Ошибка</h1>
         <pre>${message}</pre>
         <button onclick="window.close()">Закрыть</button>
       </div>
@@ -246,18 +220,24 @@ function showError(message) {
 }
 
 function checkBackendReady(callback) {
-  const req = http.get('http://localhost:3102/api/v1/health', (res) => {
-    if (res.statusCode === 200) {
-      callback(true);
-    } else {
-      callback(false);
-    }
-  });
-  req.on('error', () => callback(false));
-  req.setTimeout(1000, () => {
-    req.destroy();
-    callback(false);
-  });
+  try {
+    const req = http.get('http://localhost:3102/api/v1/health', (res) => {
+      callback(true, null);
+    });
+    req.on('error', (err) => {
+      if (err.message && err.message.includes('EADDRINUSE')) {
+        callback(false, 'EADDRINUSE');
+      } else {
+        callback(false, null);
+      }
+    });
+    req.setTimeout(1000, () => {
+      req.destroy();
+      callback(false, null);
+    });
+  } catch (e) {
+    callback(false, null);
+  }
 }
 
 function initDatabase(callback) {
@@ -285,7 +265,6 @@ function initDatabase(callback) {
   prismaProcess.on('close', (code) => {
     if (code === 0) {
       log('Database migrated');
-      // Seed data
       const npmCmd = isWindows ? 'npm.cmd' : 'npm';
       const seedProcess = spawn(npmCmd, ['run', 'seed'], {
         cwd: backendPath,
@@ -319,7 +298,6 @@ function startBackend(callback) {
 
   const nodeCmd = isWindows ? 'node.exe' : 'node';
 
-  // Check Node.js availability
   const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
   checkNode.on('error', () => {
     callback(false, 'Node.js не установлен. Скачайте с https://nodejs.org');
@@ -331,7 +309,6 @@ function startBackend(callback) {
     }
 
     const env = {
-      ...process.env,
       NODE_ENV: 'production',
       PORT: '3102',
       DATABASE_URL: 'file:' + dbPath,
@@ -359,12 +336,8 @@ function startBackend(callback) {
 
     backendProcess.on('close', (code) => {
       log('Backend exited with code: ' + code);
-      if (code !== 0 && code !== null) {
-        callback(false, 'Бэкенд завершился с кодом: ' + code);
-      }
     });
 
-    // Wait for backend to be ready
     let attempts = 0;
     const maxAttempts = 30;
 
@@ -377,97 +350,7 @@ function startBackend(callback) {
           log('Backend is ready');
           callback(true);
         } else if (statusCode === 'EADDRINUSE') {
-          callback(false, 'Порт 3102 уже занят!\n\nДругое приложение использует этот порт.\n\nРешение:\n1. Закройте другое приложение на порту 3102\n2. Или запустите: lsof -i :3102 и kill PID');
-        } else if (attempts < maxAttempts) {
-          setTimeout(tryConnect, 1000);
-        } else {
-          callback(false, 'Превышено время ожидания запуска сервера');
-        }
-      });
-    }
-
-    setTimeout(tryConnect, 2000);
-  });
-
-  checkNode.stdin.end();
-}
-
-function checkBackendReady(callback) {
-  const req = http.get('http://localhost:3102/api/v1/health', (res) => {
-    callback(true, null);
-  });
-  req.on('error', (err) => {
-    if (err.message && err.message.includes('EADDRINUSE')) {
-      callback(false, 'EADDRINUSE');
-    } else {
-      callback(false, null);
-    }
-  });
-  req.setTimeout(1000, () => {
-    req.destroy();
-    callback(false, null);
-  });
-}
-
-  const nodeCmd = isWindows ? 'node.exe' : 'node';
-
-  // Check Node.js availability
-  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
-  checkNode.on('error', () => {
-    callback(false, 'Node.js не установлен. Скачайте с https://nodejs.org');
-  });
-  checkNode.on('close', (code) => {
-    if (code !== 0) {
-      callback(false, 'Node.js не найден в PATH');
-      return;
-    }
-
-    const env = {
-      ...process.env,
-      NODE_ENV: 'production',
-      PORT: '3102',
-      DATABASE_URL: 'file:' + dbPath,
-      JWT_SECRET: 'stradex-jwt-secret-change-in-production',
-    };
-
-    backendProcess = spawn(nodeCmd, [mainJsPath], {
-      cwd: backendPath,
-      shell: true,
-      stdio: 'pipe',
-      env,
-    });
-
-    backendProcess.stdout.on('data', (d) => {
-      process.stdout.write('[Backend] ' + d);
-    });
-    backendProcess.stderr.on('data', (d) => {
-      process.stderr.write('[Backend Error] ' + d);
-    });
-
-    backendProcess.on('error', (err) => {
-      log('Backend spawn error: ' + err.message);
-      callback(false, 'Ошибка запуска: ' + err.message);
-    });
-
-    backendProcess.on('close', (code) => {
-      log('Backend exited with code: ' + code);
-      if (code !== 0 && code !== null) {
-        callback(false, 'Бэкенд завершился с кодом: ' + code);
-      }
-    });
-
-    // Wait for backend to be ready
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    function tryConnect() {
-      attempts++;
-      showSplash('Запуск сервера (' + attempts + '/' + maxAttempts + ')...');
-
-      checkBackendReady((ready) => {
-        if (ready) {
-          log('Backend is ready');
-          callback(true);
+          callback(false, 'Порт 3102 уже занят!\n\nДругое приложение использует этот порт.\n\nРешение: lsof -i :3102 и kill PID');
         } else if (attempts < maxAttempts) {
           setTimeout(tryConnect, 1000);
         } else {
@@ -485,7 +368,6 @@ function checkBackendReady(callback) {
 ipcMain.handle('get-app-path', () => app.getAppPath());
 ipcMain.handle('get-version', () => app.getVersion());
 
-// Global handlers
 process.on('uncaughtException', (err) => {
   log('Uncaught: ' + err.message);
   showError('Критическая ошибка:\n' + err.message);
