@@ -2,41 +2,142 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 
 // Determine if we're in development or production
 const isDev = !app.isPackaged;
 const isWindows = process.platform === 'win32';
 
-// Paths - handle both Linux and Windows paths
+// Paths
 const appPath = app.getAppPath();
 const resourcesPath = isDev
   ? path.join(__dirname, '..', 'backend')
   : path.join(appPath, '..', 'backend');
 const backendPath = resourcesPath;
-const frontendPath = isDev
-  ? path.join(__dirname, '..', 'frontend', 'dist')
-  : path.join(appPath, '..', 'frontend', 'dist');
 const dbPath = path.join(backendPath, 'prisma', 'stradex.db');
 const backendDistPath = path.join(backendPath, 'dist');
 
-// Store processes
 let backendProcess = null;
 let mainWindow = null;
+let splashWindow = null;
 
 function log(msg) {
-  const timestamp = new Date().toISOString();
-  console.log(`[STRADEX ${timestamp}] ${msg}`);
+  console.log(`[STRADEX] ${msg}`);
 }
 
-function createWindow() {
-  log('Creating window...');
+function showSplash(message) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status').textContent = ${JSON.stringify(message)};
+    `).catch(() => {});
+  }
+}
 
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 500,
+    height: 350,
+    frame: false,
+    resizable: false,
+    center: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  splashWindow.loadURL(`data:text/html;charset=utf-8,
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          background: linear-gradient(135deg, #1e1e2e 0%, #0f172a 100%);
+          color: white;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          text-align: center;
+        }
+        .logo {
+          font-size: 64px;
+          margin-bottom: 20px;
+        }
+        h1 {
+          font-size: 28px;
+          font-weight: 600;
+          margin-bottom: 10px;
+          background: linear-gradient(90deg, #818cf8, #c084fc);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+          color: #94a3b8;
+          font-size: 14px;
+          margin-bottom: 30px;
+        }
+        .spinner {
+          width: 40px;
+          height: 40px;
+          border: 3px solid #334155;
+          border-top-color: #818cf8;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin-bottom: 20px;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .status {
+          color: #94a3b8;
+          font-size: 13px;
+          min-height: 20px;
+        }
+        .progress {
+          width: 200px;
+          height: 4px;
+          background: #334155;
+          border-radius: 2px;
+          overflow: hidden;
+          margin-top: 15px;
+        }
+        .progress-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #818cf8, #c084fc);
+          animation: progress 2s ease-in-out infinite;
+        }
+        @keyframes progress {
+          0% { width: 0%; margin-left: 0; }
+          50% { width: 60%; margin-left: 20%; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="logo">🅿️</div>
+      <h1>STRADEX</h1>
+      <div class="subtitle">Автоматизированная парковочная система</div>
+      <div class="spinner"></div>
+      <div class="status" id="status">Инициализация...</div>
+      <div class="progress"><div class="progress-bar"></div></div>
+    </body>
+    </html>
+  `);
+}
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
     title: 'STRADEX - Парковочная система',
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -44,152 +145,197 @@ function createWindow() {
     },
   });
 
-  // Load the app
   if (isDev) {
-    log('Loading dev server at http://localhost:5173');
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    // Production: load from bundled frontend via localhost (so backend serves it)
-    // This ensures API calls work correctly
-    log('Loading production frontend via localhost:3102');
     mainWindow.loadURL('http://localhost:3102');
-
-    // Open devtools for debugging on Windows
-    mainWindow.webContents.openDevTools();
-
-    // Show error if page fails to load
-    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-      log('Page failed to load: ' + errorCode + ' - ' + errorDescription);
-      createErrorWindow('Не удалось загрузить приложение.\nКод ошибки: ' + errorCode + '\n' + errorDescription +
-        '\n\nПроверьте, что бэкенд запущен на порту 3102.');
-    });
-
-    // Log when page loads (for debugging)
-    mainWindow.webContents.on('did-finish-load', () => {
-      log('Page finished loading');
-    });
   }
+
+  mainWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+    }
+    mainWindow.show();
+    mainWindow.maximize();
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    log('Page failed to load: ' + errorCode + ' - ' + errorDescription);
+    showError('Ошибка загрузки приложения\n\n' + errorDescription);
+  });
+
+  mainWindow.webContents.on('crashed', () => {
+    showError('Приложение неожиданно завершилось');
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
 
-  // Catch any unhandled errors in the renderer
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
-    log('Renderer process gone: ' + details.reason);
-    createErrorWindow('Приложение неожиданно завершилось.\nПричина: ' + details.reason);
+function showError(message) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+
+  const errorWin = new BrowserWindow({
+    width: 500,
+    height: 400,
+    resizable: false,
+    center: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true },
+  });
+
+  errorWin.loadURL(`data:text/html;charset=utf-8,
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          background: #0f172a;
+          color: #e2e8f0;
+          font-family: sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          margin: 0;
+          padding: 20px;
+        }
+        .box {
+          text-align: center;
+          max-width: 400px;
+        }
+        h1 { color: #f87171; margin-bottom: 20px; }
+        pre {
+          background: #1e293b;
+          padding: 15px;
+          border-radius: 8px;
+          text-align: left;
+          font-size: 12px;
+          white-space: pre-wrap;
+          color: #94a3b8;
+        }
+        button {
+          margin-top: 20px;
+          padding: 12px 30px;
+          background: #6366f1;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+        }
+        button:hover { background: #4f46e5; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>⚠ Ошибка</h1>
+        <pre>${message}</pre>
+        <button onclick="window.close()">Закрыть</button>
+      </div>
+    </body>
+    </html>
+  `);
+}
+
+function checkBackendReady(callback) {
+  const req = http.get('http://localhost:3102/api/v1/health', (res) => {
+    if (res.statusCode === 200) {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+  req.on('error', () => callback(false));
+  req.setTimeout(1000, () => {
+    req.destroy();
+    callback(false);
   });
 }
 
 function initDatabase(callback) {
-  log('Checking database at: ' + dbPath);
+  log('Checking database...');
 
-  // Check if database exists
   if (fs.existsSync(dbPath)) {
-    log('Database already exists');
+    log('Database exists');
     callback(true);
     return;
   }
 
-  log('Database not found, running migrations...');
-
-  // Ensure prisma directory exists
+  log('Creating database...');
   const prismaDir = path.join(backendPath, 'prisma');
   if (!fs.existsSync(prismaDir)) {
     fs.mkdirSync(prismaDir, { recursive: true });
   }
 
-  // Set environment variables
-  const env = {
-    ...process.env,
-    DATABASE_URL: `file:${dbPath}`,
-  };
-
-  // Run prisma migrate
   const npxCmd = isWindows ? 'npx.cmd' : 'npx';
-  const migrate = spawn(npxCmd, ['prisma', 'migrate', 'dev', '--name', 'init'], {
+  const prismaProcess = spawn(npxCmd, ['prisma', 'migrate', 'dev', '--name', 'init'], {
     cwd: backendPath,
     shell: true,
     stdio: 'pipe',
-    env,
   });
 
-  migrate.stdout.on('data', (data) => {
-    process.stdout.write('[Migrate] ' + data.toString());
-  });
-  migrate.stderr.on('data', (data) => {
-    process.stderr.write('[Migrate] ' + data.toString());
-  });
-
-  migrate.on('close', (code) => {
-    log('Migration process exited with code: ' + code);
-
+  prismaProcess.on('close', (code) => {
     if (code === 0) {
-      log('Running seed...');
-
+      log('Database migrated');
+      // Seed data
       const npmCmd = isWindows ? 'npm.cmd' : 'npm';
-      const seed = spawn(npmCmd, ['run', 'prisma:seed'], {
+      const seedProcess = spawn(npmCmd, ['run', 'seed'], {
         cwd: backendPath,
         shell: true,
         stdio: 'pipe',
-        env,
       });
-
-      seed.stdout.on('data', (data) => {
-        process.stdout.write('[Seed] ' + data.toString());
-      });
-      seed.stderr.on('data', (data) => {
-        process.stderr.write('[Seed] ' + data.toString());
-      });
-
-      seed.on('close', (seedCode) => {
-        log('Seed process exited with code: ' + seedCode);
+      seedProcess.on('close', (seedCode) => {
+        log('Seed completed with code: ' + seedCode);
         callback(seedCode === 0);
       });
+      seedProcess.stderr.on('data', (d) => log('Seed stderr: ' + d.toString()));
     } else {
-      log('Migration failed!');
+      log('Migration failed with code: ' + code);
       callback(false);
     }
   });
+
+  prismaProcess.stderr.on('data', (d) => log('Prisma stderr: ' + d.toString()));
 }
 
 function startBackend(callback) {
-  log('Starting backend server...');
+  log('Starting backend...');
 
   const mainJsPath = path.join(backendDistPath, 'main.js');
-  log('Backend main: ' + mainJsPath);
 
   if (!fs.existsSync(mainJsPath)) {
-    log('ERROR: Backend not built! ' + mainJsPath);
-    if (callback) callback(false, 'Бэкенд не собран. Запустите сборку.');
+    log('Backend not found: ' + mainJsPath);
+    callback(false, 'Бэкенд не найден: ' + mainJsPath);
     return;
   }
 
-  // Check if node is available
   const nodeCmd = isWindows ? 'node.exe' : 'node';
-  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
-  
-  checkNode.on('error', () => {
-    log('ERROR: Node.js not found! Please install Node.js to run the backend.');
-    if (callback) callback(false, 'Node.js не найден. Установите Node.js с https://nodejs.org');
-    return;
-  });
 
+  // Check Node.js availability
+  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
+  checkNode.on('error', () => {
+    callback(false, 'Node.js не установлен. Скачайте с https://nodejs.org');
+  });
   checkNode.on('close', (code) => {
     if (code !== 0) {
-      if (callback) callback(false, 'Node.js не найден. Установите Node.js с https://nodejs.org');
+      callback(false, 'Node.js не найден в PATH');
       return;
     }
 
-    // Environment for backend
     const env = {
       ...process.env,
       NODE_ENV: 'production',
       PORT: '3102',
-      DATABASE_URL: `file:${dbPath}`,
+      DATABASE_URL: 'file:' + dbPath,
       JWT_SECRET: 'stradex-jwt-secret-change-in-production',
-      CORS_ORIGIN: '*',
     };
 
     backendProcess = spawn(nodeCmd, [mainJsPath], {
@@ -199,242 +345,95 @@ function startBackend(callback) {
       env,
     });
 
-    let startupComplete = false;
-
-    backendProcess.stdout.on('data', (data) => {
-      const text = data.toString();
-      process.stdout.write('[Backend] ' + text);
-
-      if (!startupComplete && text.includes('running on http://localhost')) {
-        startupComplete = true;
-        log('Backend started successfully!');
-        if (callback) callback(true, null);
-      }
+    backendProcess.stdout.on('data', (d) => {
+      process.stdout.write('[Backend] ' + d);
     });
-
-    backendProcess.stderr.on('data', (data) => {
-      process.stderr.write('[Backend Error] ' + data.toString());
-    });
-
-    backendProcess.on('close', (code) => {
-      log('Backend process exited with code: ' + code);
-      if (!startupComplete && callback) callback(false, `Бэкенд завершился с кодом ${code}`);
+    backendProcess.stderr.on('data', (d) => {
+      process.stderr.write('[Backend Error] ' + d);
     });
 
     backendProcess.on('error', (err) => {
-      log('Backend error: ' + err.message);
-      if (!startupComplete && callback) callback(false, `Ошибка запуска бэкенда: ${err.message}`);
+      log('Backend spawn error: ' + err.message);
+      callback(false, 'Ошибка запуска: ' + err.message);
     });
+
+    backendProcess.on('close', (code) => {
+      log('Backend exited with code: ' + code);
+      if (code !== 0 && code !== null) {
+        callback(false, 'Бэкенд завершился с кодом: ' + code);
+      }
+    });
+
+    // Wait for backend to be ready
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    function tryConnect() {
+      attempts++;
+      showSplash('Запуск сервера (' + attempts + '/' + maxAttempts + ')...');
+
+      checkBackendReady((ready) => {
+        if (ready) {
+          log('Backend is ready');
+          callback(true);
+        } else if (attempts < maxAttempts) {
+          setTimeout(tryConnect, 1000);
+        } else {
+          callback(false, 'Превышено время ожидания запуска сервера');
+        }
+      });
+    }
+
+    setTimeout(tryConnect, 2000);
   });
 
   checkNode.stdin.end();
 }
 
-// IPC handlers
 ipcMain.handle('get-app-path', () => app.getAppPath());
 ipcMain.handle('get-version', () => app.getVersion());
-ipcMain.handle('get-db-path', () => dbPath);
 
-// Global error handlers
-process.on('uncaughtException', (error) => {
-  log('UNCAUGHT EXCEPTION: ' + error.message);
-  log(error.stack);
-  try {
-    createErrorWindow('Критическая ошибка Node.js:\n' + error.message + '\n\n' + (error.stack || '').split('\n').slice(0, 5).join('\n'));
-  } catch (e) {
-    console.error('Failed to create error window:', e);
-  }
+// Global handlers
+process.on('uncaughtException', (err) => {
+  log('Uncaught: ' + err.message);
+  showError('Критическая ошибка:\n' + err.message);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  log('UNHANDLED REJECTION: ' + reason);
-});
+app.whenReady().then(() => {
+  log('Starting STRADEX...');
 
-// App lifecycle
-app.whenReady().then(async () => {
-  log('App ready, initializing...');
+  createSplashWindow();
 
-  // Safety timeout - if app doesn't start in 30 seconds, show error
-  const safetyTimeout = setTimeout(() => {
-    log('Safety timeout triggered - app failed to start');
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      createErrorWindow('Приложение не запустилось за отведённое время.\nВозможные причины:\n1. Node.js не установлен или не найден в PATH\n2. Порт 3102 занят другой программой\n3. Ошибка инициализации базы данных\n\nПопробуйте:\n- Установить Node.js с https://nodejs.org\n- Перезапустить от имени администратора\n- Проверить антивирус');
+  initDatabase((dbOk) => {
+    if (!dbOk) {
+      showError('Не удалось инициализировать базу данных.\n\nВозможные причины:\n1. Нет прав на запись\n2. Повреждённая установка\n3. Prisma не работает');
+      return;
     }
-  }, 30000);
 
-  initDatabase((success) => {
-    clearTimeout(safetyTimeout);
-    if (success) {
-      log('Database initialized');
+    showSplash('Запуск сервера...');
 
-      setTimeout(() => {
-        startBackend((backendOk, backendErr) => {
-          if (backendOk) {
-            setTimeout(() => {
-              try {
-                createWindow();
-                log('Window created');
-              } catch (e) {
-                log('Failed to create window: ' + e.message);
-                createErrorWindow('Не удалось создать окно приложения:\n' + e.message);
-              }
-            }, 2000);
-          } else {
-            // Show error in window
-            createErrorWindow('Ошибка запуска бэкенда:\n' + (backendErr || 'Неизвестная ошибка') + '\n\nДля работы приложения требуется Node.js.\nСкачайте с https://nodejs.org', true);
-          }
-        });
-      }, 2000);
-    } else {
-      log('Failed to initialize database');
-      createErrorWindow('Не удалось инициализировать базу данных.\nПроверьте права доступа к папке приложения.');
-    }
+    startBackend((backendOk, backendErr) => {
+      if (!backendOk) {
+        showError(backendErr || 'Не удалось запустить сервер');
+        return;
+      }
+
+      showSplash('Загрузка интерфейса...');
+      createMainWindow();
+    });
   });
-});
-
-function createErrorWindow(message, showRetry = false) {
-  const retryBtn = showRetry ? '<button class="btn" onclick="location.reload()">Повторить</button>' : '';
-  mainWindow = new BrowserWindow({
-    width: 700,
-    height: 500,
-    title: 'STRADEX - Ошибка запуска',
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  });
-
-  const encodedMsg = encodeURI(message).replace(/%20/g, ' ').replace(/%3A/g, ':').replace(/%2E/g, '.').replace(/%2C/g, ',').replace(/%28/g, '(').replace(/%29/g, ')').replace(/%27/g, "'").replace(/%0A/g, '<br>');
-
-  mainWindow.loadURL(`data:text/html;charset=utf-8,
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        * { box-sizing: border-box; }
-        body {
-          background: #0f172a;
-          color: #e2e8f0;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          margin: 0;
-          padding: 20px;
-        }
-        .container {
-          text-align: center;
-          max-width: 550px;
-          background: #1e293b;
-          border-radius: 16px;
-          padding: 40px;
-          border: 1px solid #334155;
-        }
-        .icon { font-size: 48px; margin-bottom: 20px; }
-        h1 {
-          color: #f87171;
-          font-size: 24px;
-          margin: 0 0 16px 0;
-        }
-        .message {
-          color: #94a3b8;
-          line-height: 1.7;
-          font-size: 14px;
-          text-align: left;
-          white-space: pre-wrap;
-          background: #0f172a;
-          padding: 16px;
-          border-radius: 8px;
-          margin: 16px 0;
-        }
-        .btn {
-          display: inline-block;
-          margin: 8px 4px;
-          padding: 12px 24px;
-          background: #6366f1;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 14px;
-          text-decoration: none;
-        }
-        .btn:hover { background: #4f46e5; }
-        .btn-secondary { background: #475569; }
-        .btn-secondary:hover { background: #64748b; }
-        .diag {
-          margin-top: 24px;
-          padding-top: 24px;
-          border-top: 1px solid #334155;
-          text-align: left;
-        }
-        .diag h3 {
-          color: #94a3b8;
-          font-size: 12px;
-          text-transform: uppercase;
-          margin: 0 0 12px 0;
-        }
-        .diag-item {
-          display: flex;
-          justify-content: space-between;
-          padding: 6px 0;
-          font-size: 13px;
-        }
-        .diag-item span:first-child { color: #64748b; }
-        .diag-item span:last-child { color: #e2e8f0; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="icon">⚠️</div>
-        <h1>Ошибка запуска STRADEX</h1>
-        <div class="message">${encodedMsg}</div>
-        <div>
-          <button class="btn" onclick="location.reload()">Повторить</button>
-          <button class="btn btn-secondary" onclick="window.close()">Закрыть</button>
-        </div>
-        <div class="diag">
-          <h3>Диагностика</h3>
-          <div class="diag-item"><span>Версия Node.js</span><span id="node-version">проверка...</span></div>
-          <div class="diag-item"><span>Порт 3102</span><span id="port-check">проверка...</span></div>
-          <div class="diag-item"><span>Путь к бэкенду</span><span id="backend-path">-</span></div>
-        </div>
-      </div>
-      <script>
-        document.getElementById('backend-path').textContent = decodeURIComponent('${encodeURIComponent(backendDistPath)}');
-        fetch('http://localhost:3102/api/v1/health')
-          .then(r => r.json())
-          .then(d => document.getElementById('port-check').textContent = '✓ Работает')
-          .catch(() => document.getElementById('port-check').textContent = '✗ Не отвечает');
-        document.getElementById('node-version').textContent = process.versions.node;
-      </script>
-    </body>
-    </html>
-  `);
-}
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
 });
 
 app.on('window-all-closed', () => {
-  log('All windows closed');
   if (backendProcess) {
     backendProcess.kill();
   }
-  if (!isWindows && process.platform !== 'darwin') {
+  if (!isWindows) {
     app.quit();
   }
 });
 
 app.on('before-quit', () => {
-  log('App quitting...');
   if (backendProcess) {
     backendProcess.kill();
   }
