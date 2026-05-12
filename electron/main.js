@@ -22,35 +22,59 @@ function log(msg) {
   console.log('[STRADEX] ' + msg);
 }
 
-function waitForBackend(callback, maxWait = 30000) {
+function waitForBackend(callback, maxWait = 45000) {
   const startTime = Date.now();
+  let attempts = 0;
 
   function tryConnect() {
-    const req = http.get('http://localhost:3102/api/v1/health', (res) => {
-      if (res.statusCode === 200) {
-        log('Backend ready!');
-        callback(true);
-      } else {
-        retry();
-      }
-    });
-    req.on('error', () => retry());
-    req.setTimeout(2000, () => {
-      req.destroy();
-      retry();
-    });
-  }
+    attempts++;
+    const elapsed = Date.now() - startTime;
+    log('Attempt ' + attempts + ': Checking backend at http://127.0.0.1:3102...');
 
-  function retry() {
-    if (Date.now() - startTime > maxWait) {
-      log('Backend wait timeout');
-      callback(false);
-    } else {
-      setTimeout(tryConnect, 1000);
+    try {
+      const req = http.get('http://127.0.0.1:3102/api/v1/health', (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          log('Backend response status: ' + res.statusCode);
+          if (res.statusCode === 200) {
+            log('Backend is ready!');
+            callback(true);
+          } else {
+            log('Backend returned non-200: ' + res.statusCode);
+            retry();
+          }
+        });
+      });
+      req.on('error', (err) => {
+        log('HTTP error: ' + err.message);
+        retry();
+      });
+      req.setTimeout(3000, () => {
+        req.destroy();
+        log('HTTP request timeout');
+        retry();
+      });
+    } catch (err) {
+      log('Exception: ' + err.message);
+      retry();
     }
   }
 
-  tryConnect();
+  function retry() {
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= maxWait) {
+      log('Timeout after ' + elapsed + 'ms and ' + attempts + ' attempts');
+      callback(false);
+    } else {
+      log('Retrying in 2 seconds... (elapsed: ' + elapsed + 'ms)');
+      setTimeout(tryConnect, 2000);
+    }
+  }
+
+  // Give backend time to start
+  log('Waiting 5 seconds before first health check...');
+  setTimeout(tryConnect, 5000);
 }
 
 function startBackend(callback) {

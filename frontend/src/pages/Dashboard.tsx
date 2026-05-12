@@ -23,9 +23,9 @@ export default function Dashboard() {
     try {
       const data = await api.get('/dashboard/statistics');
       setStats(data);
-      
+
       // Загружаем статистику по типам клиентов
-      const sessionsData = await api.get('/dashboard/sessions?status=COMPLETED');
+      const sessionsData = await api.get('/dashboard/parking/sessions?status=COMPLETED');
       const sessions = Array.isArray(sessionsData) ? sessionsData : [];
       
       // Группируем по типу клиента
