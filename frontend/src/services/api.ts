@@ -1,12 +1,12 @@
 // API Configuration
-// In Electron (file:// protocol), backend runs on localhost:3102
-// In browser (served from backend or Vite dev), use relative path
+// When served from file:// (Electron) - use localhost
+// When served from HTTP - use relative paths
 
-const isElectron = typeof window !== 'undefined' && window.location.protocol === 'file:';
+const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
 
-// When served from file:// (Electron), need absolute URL to backend
-// When served from HTTP (dev or production), same origin - use relative
-const API_BASE = isElectron ? 'http://localhost:3102' : '';
+// For Electron (file://), backend runs on localhost:3102
+// For HTTP (dev or production), use relative path
+const API_BASE = isFileProtocol ? 'http://localhost:3102' : '';
 
 export const api = {
   async get(endpoint: string) {

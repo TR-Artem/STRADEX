@@ -130,16 +130,35 @@ function createMainWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadURL('http://localhost:3102');
+    // Load from local files - more reliable than HTTP
+    const indexPath = path.join(appPath, '..', 'frontend', 'dist', 'index.html');
+    log('Loading frontend from: ' + indexPath);
+    mainWindow.loadFile(indexPath);
   }
 
   mainWindow.once('ready-to-show', () => {
+    log('Main window ready to show');
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
+      splashWindow = null;
     }
     mainWindow.show();
     mainWindow.maximize();
+    log('Main window shown');
   });
+
+  // Fallback: show main window after 10 seconds even if ready-to-show doesn't fire
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      log('Fallback: showing main window after timeout');
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      mainWindow.show();
+      mainWindow.maximize();
+    }
+  }, 10000);
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     log('Page failed to load: ' + errorCode + ' - ' + errorDescription);
