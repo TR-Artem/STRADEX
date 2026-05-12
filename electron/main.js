@@ -372,6 +372,98 @@ function startBackend(callback) {
       attempts++;
       showSplash('Запуск сервера (' + attempts + '/' + maxAttempts + ')...');
 
+      checkBackendReady((ready, statusCode) => {
+        if (ready) {
+          log('Backend is ready');
+          callback(true);
+        } else if (statusCode === 'EADDRINUSE') {
+          callback(false, 'Порт 3102 уже занят!\n\nДругое приложение использует этот порт.\n\nРешение:\n1. Закройте другое приложение на порту 3102\n2. Или запустите: lsof -i :3102 и kill PID');
+        } else if (attempts < maxAttempts) {
+          setTimeout(tryConnect, 1000);
+        } else {
+          callback(false, 'Превышено время ожидания запуска сервера');
+        }
+      });
+    }
+
+    setTimeout(tryConnect, 2000);
+  });
+
+  checkNode.stdin.end();
+}
+
+function checkBackendReady(callback) {
+  const req = http.get('http://localhost:3102/api/v1/health', (res) => {
+    callback(true, null);
+  });
+  req.on('error', (err) => {
+    if (err.message && err.message.includes('EADDRINUSE')) {
+      callback(false, 'EADDRINUSE');
+    } else {
+      callback(false, null);
+    }
+  });
+  req.setTimeout(1000, () => {
+    req.destroy();
+    callback(false, null);
+  });
+}
+
+  const nodeCmd = isWindows ? 'node.exe' : 'node';
+
+  // Check Node.js availability
+  const checkNode = spawn(nodeCmd, ['--version'], { shell: true, stdio: 'pipe' });
+  checkNode.on('error', () => {
+    callback(false, 'Node.js не установлен. Скачайте с https://nodejs.org');
+  });
+  checkNode.on('close', (code) => {
+    if (code !== 0) {
+      callback(false, 'Node.js не найден в PATH');
+      return;
+    }
+
+    const env = {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: '3102',
+      DATABASE_URL: 'file:' + dbPath,
+      JWT_SECRET: 'stradex-jwt-secret-change-in-production',
+    };
+
+    backendProcess = spawn(nodeCmd, [mainJsPath], {
+      cwd: backendPath,
+      shell: true,
+      stdio: 'pipe',
+      env,
+    });
+
+    backendProcess.stdout.on('data', (d) => {
+      process.stdout.write('[Backend] ' + d);
+    });
+    backendProcess.stderr.on('data', (d) => {
+      process.stderr.write('[Backend Error] ' + d);
+    });
+
+    backendProcess.on('error', (err) => {
+      log('Backend spawn error: ' + err.message);
+      callback(false, 'Ошибка запуска: ' + err.message);
+    });
+
+    backendProcess.on('close', (code) => {
+      log('Backend exited with code: ' + code);
+      if (code !== 0 && code !== null) {
+        callback(false, 'Бэкенд завершился с кодом: ' + code);
+      }
+    });
+
+    // Wait for backend to be ready
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    function tryConnect() {
+      attempts++;
+      showSplash('Запуск сервера (' + attempts + '/' + maxAttempts + ')...');
+
       checkBackendReady((ready) => {
         if (ready) {
           log('Backend is ready');
